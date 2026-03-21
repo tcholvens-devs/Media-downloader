@@ -151,4 +151,43 @@ app.post("/download", (req, res) => {
   proc.on("close", (code) => {
     if (code === 0) {
       const files = fs.readdirSync(DOWNLOADS_DIR).filter(f => f.startsWith(jobId));
-  
+      if (files.length > 0) {
+        jobs[jobId].status = "completed";
+        jobs[jobId].progress = 100;
+        jobs[jobId].filename = files[0];
+        jobs[jobId].downloadUrl = `/file/${jobId}`;
+      } else {
+        jobs[jobId].status = "failed";
+        jobs[jobId].error = "Fichier introuvable après téléchargement";
+      }
+    } else {
+      jobs[jobId].status = "failed";
+      jobs[jobId].error = "Téléchargement échoué (code " + code + ")";
+    }
+  });
+
+  res.json({ jobId });
+});
+
+app.get("/status/:jobId", (req, res) => {
+  const job = jobs[req.params.jobId];
+  if (!job) return res.status(404).json({ error: "Job introuvable" });
+  res.json(job);
+});
+
+app.get("/file/:jobId", (req, res) => {
+  const job = jobs[req.params.jobId];
+  if (!job || !job.filename) return res.status(404).json({ error: "Fichier introuvable" });
+
+  const filePath = path.join(DOWNLOADS_DIR, job.filename);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: "Fichier supprimé" });
+
+  const safeName = (job.title || "video").replace(/[^a-zA-Z0-9\-_. ]/g, "_").slice(0, 80) + path.extname(job.filename);
+  res.setHeader("Content-Disposition", `attachment; filename="${safeName}"`);
+  res.sendFile(filePath);
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Serveur lancé sur http://localhost:${PORT}`);
+});
