@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shadow Tech — Media Downloader</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="bg-grid"></div>
+
+  <div class="container">
+    <div class="header">
+      <div class="logo">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7,10 12,15 17,10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+      </div>
+      <div class="header-text">
+        <h1>Shadow Tech</h1>
+        <p class="subtitle">Media Downloader</p>
+      </div>
+    </div>
+
+    <div class="platforms">
+      <span class="platform-badge">YouTube</span>
+      <span class="platform-badge">TikTok</span>
+      <span class="platform-badge">Instagram</span>
+      <span class="platform-badge">Twitter/X</span>
+      <span class="platform-badge">+ plus</span>
+    </div>
+
+    <div class="input-section">
+      <div class="input-wrapper">
+        <svg class="input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+        </svg>
+        <input type="text" id="urlInput" placeholder="Colle le lien YouTube, TikTok, Instagram..." autocomplete="off" spellcheck="false">
+        <button class="clear-btn" id="clearBtn" onclick="clearInput()" style="display:none">✕</button>
+      </div>
+      <button class="btn-primary" id="analyzeBtn" onclick="analyze()">
+        <span id="analyzeBtnText">Analyser</span>
+        <div class="btn-spinner hidden" id="analyzeBtnSpinner"></div>
+      </button>
+    </div>
+
+    <div id="errorBox" class="error-box hidden">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      <span id="errorMsg"></span>
+    </div>
+
+    <div id="result" class="result hidden">
+      <div class="media-card">
+        <div class="thumbnail-wrapper">
+          <img id="thumbnail" src="" alt="thumbnail">
+          <div class="duration-badge" id="durationBadge"></div>
+          <div class="platform-label" id="platformLabel"></div>
+        </div>
+        <div class="media-info">
+          <h2 id="videoTitle"></h2>
+          <p class="uploader" id="uploaderName"></p>
+        </div>
+      </div>
+
+      <div class="formats-section">
+        <p class="formats-label">Choisir le format :</p>
+        <div class="formats-grid" id="formatsGrid"></div>
+      </div>
+
+      <button class="btn-download" id="downloadBtn" onclick="startDownload()" disabled>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7,10 12,15 17,10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Télécharger
+      </button>
+
+      <div class="progress-section hidden" id="progressSection">
+        <div class="progress-info">
+          <span id="progressLabel">Téléchargement en cours...</span>
+          <span id="progressPct">0%</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+      </div>
+
+      <div class="done-section hidden" id="doneSection">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="20,6 9,17 4,12"/>
+        </svg>
+        Téléchargement terminé !
+        <a id="downloadLink" href="#" class="download-link">Sauvegarder le fichier</a>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    ©2026 Shadow Tech. Tous droits réservés.
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+      </html>
