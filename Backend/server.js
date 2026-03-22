@@ -1,11 +1,9 @@
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
-const { execFile, spawn } = require("child_process");
 const fs = require("fs");
 const { v4: uuidv4 } = require("uuid");
-
-const PYTHON = "/nix/store/nki9ywqzbvz68vr75kn2r7g1q84f5agy-python3-3.9.6/bin/python3";
+const YTDlpWrap = require("yt-dlp-wrap").default;
 
 const app = express();
 app.use(cors());
@@ -16,9 +14,58 @@ app.get("/", (req, res) => {
 });
 
 const DOWNLOADS_DIR = path.join(__dirname, "../downloads");
+const BIN_PATH = path.join(__dirname, "../bin/yt-dlp");
+
 if (!fs.existsSync(DOWNLOADS_DIR)) fs.mkdirSync(DOWNLOADS_DIR, { recursive: true });
+if (!fs.existsSync(path.join(__dirname, "../bin"))) fs.mkdirSync(path.join(__dirname, "../bin"), { recursive: true });
 
 const jobs = {};
+let ytDlpWrap = null;
+
+const https = require("https");
+
+function downloadFile(url, dest) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(dest);
+    const request = (reqUrl) => {
+      https.get(reqUrl, (res) => {
+        if (res.statusCode === 301 || res.statusCode === 302) {
+          return request(res.headers.location);
+        }
+        if (res.statusCode !== 200) {
+          return reject(new Error(`HTTP ${res.statusCode}`));
+        }
+        res.pipe(file);
+        file.on("finish", () => file.close(resolve));
+      }).on("error", reject);
+    };
+    request(url);
+  });
+}
+
+async function initYtDlp() {
+  if (fs.existsSync(BIN_PATH)) {
+    try {
+      ytDlpWrap = new YTDlpWrap(BIN_PATH);
+      const ver = await ytDlpWrap.getVersion();
+      console.log(`yt-dlp binary ready (v${ver})`);
+      return;
+    } catch {
+      console.log("Existing binary failed, re-downloading...");
+    }
+  }
+  console.log("Downloading yt-dlp standalone binary...");
+  try {
+    const url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux";
+    await downloadFile(url, BIN_PATH);
+    fs.chmodSync(BIN_PATH, 0o755);
+    ytDlpWrap = new YTDlpWrap(BIN_PATH);
+    const ver = await ytDlpWrap.getVersion();
+    console.log(`yt-dlp downloaded and ready (v${ver})`);
+  } catch (err) {
+    console.error("Failed to download yt-dlp binary:", err.message);
+  }
+}
 
 function detectPlatform(url) {
   if (/youtube\.com|youtu\.be/.test(url)) return "YouTube";
@@ -30,86 +77,77 @@ function detectPlatform(url) {
   return "Web";
 }
 
-app.post("/analyze", (req, res) => {
+app.post("/analyze", async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: "URL manquante" });
+  if (!ytDlpWrap) return res.status(503).json({ error: "Le service de téléchargement est en cours d'initialisation, réessaie dans quelques secondes." });
 
-  execFile(PYTHON, [
-    "-m", "yt_dlp",
-    "--dump-json",
-    "--no-playlist",
-    url
-  ], { timeout: 30000 }, (err, stdout, stderr) => {
-    if (err) {
-      console.error("yt-dlp error:", stderr);
-      return res.status(500).json({ error: "Impossible d'analyser cette URL", details: stderr.slice(0, 300) });
-    }
+  try {
+    const info = await ytDlpWrap.getVideoInfo(["--no-playlist", url]);
+    const platform = detectPlatform(url);
 
-    try {
-      const info = JSON.parse(stdout);
-      const platform = detectPlatform(url);
+    const seenRes = new Set();
+    const formats = [];
 
-      const seenRes = new Set();
-      const formats = [];
+    const videoFormats = (info.formats || [])
+      .filter(f => f.vcodec && f.vcodec !== "none" && f.acodec && f.acodec !== "none")
+      .sort((a, b) => (b.height || 0) - (a.height || 0));
 
-      const videoFormats = (info.formats || [])
-        .filter(f => f.vcodec && f.vcodec !== "none" && f.acodec && f.acodec !== "none")
-        .sort((a, b) => (b.height || 0) - (a.height || 0));
-
-      for (const f of videoFormats) {
-        const label = f.height ? `${f.height}p` : f.format_note || f.format_id;
-        if (!seenRes.has(label)) {
-          seenRes.add(label);
-          formats.push({
-            id: f.format_id,
-            label,
-            ext: f.ext,
-            filesize: f.filesize || f.filesize_approx || null,
-            note: f.format_note || "",
-            type: "video"
-          });
-        }
-      }
-
-      const hasVideo = (info.formats || []).some(f => f.vcodec && f.vcodec !== "none");
-      if (hasVideo) {
-        formats.unshift({
-          id: "bestvideo+bestaudio/best",
-          label: "Meilleure qualité",
-          ext: "mp4",
-          filesize: null,
-          note: "Vidéo + Audio",
+    for (const f of videoFormats) {
+      const label = f.height ? `${f.height}p` : f.format_note || f.format_id;
+      if (!seenRes.has(label)) {
+        seenRes.add(label);
+        formats.push({
+          id: f.format_id,
+          label,
+          ext: f.ext,
+          filesize: f.filesize || f.filesize_approx || null,
+          note: f.format_note || "",
           type: "video"
         });
       }
-
-      formats.push({
-        id: "bestaudio/best",
-        label: "Audio MP3",
-        ext: "mp3",
-        filesize: null,
-        note: "Audio seulement",
-        type: "audio"
-      });
-
-      res.json({
-        title: info.title,
-        thumbnail: info.thumbnail,
-        duration: info.duration,
-        uploader: info.uploader || info.channel,
-        platform,
-        url,
-        formats: formats.slice(0, 8)
-      });
-    } catch (parseErr) {
-      res.status(500).json({ error: "Erreur de parsing", details: parseErr.message });
     }
-  });
+
+    const hasVideo = (info.formats || []).some(f => f.vcodec && f.vcodec !== "none");
+    if (hasVideo) {
+      formats.unshift({
+        id: "bestvideo+bestaudio/best",
+        label: "Meilleure qualité",
+        ext: "mp4",
+        filesize: null,
+        note: "Vidéo + Audio",
+        type: "video"
+      });
+    }
+
+    formats.push({
+      id: "bestaudio/best",
+      label: "Audio MP3",
+      ext: "mp3",
+      filesize: null,
+      note: "Audio seulement",
+      type: "audio"
+    });
+
+    res.json({
+      title: info.title,
+      thumbnail: info.thumbnail,
+      duration: info.duration,
+      uploader: info.uploader || info.channel,
+      platform,
+      url,
+      formats: formats.slice(0, 8)
+    });
+  } catch (err) {
+    console.error("analyze error:", err.message);
+    res.status(500).json({ error: "Impossible d'analyser cette URL", details: err.message.slice(0, 300) });
+  }
 });
 
 app.post("/download", (req, res) => {
   const { url, formatId, title } = req.body;
   if (!url) return res.status(400).json({ error: "URL manquante" });
+  if (!ytDlpWrap) return res.status(503).json({ error: "Service non prêt, réessaie dans quelques secondes." });
 
   const jobId = uuidv4();
   const outputTemplate = path.join(DOWNLOADS_DIR, `${jobId}.%(ext)s`);
@@ -125,7 +163,7 @@ app.post("/download", (req, res) => {
     createdAt: new Date().toISOString()
   };
 
-  const args = ["-m", "yt_dlp", "--no-playlist", "--newline", "-o", outputTemplate];
+  const args = ["--no-playlist", "--newline", "-o", outputTemplate];
 
   if (formatId === "bestaudio/best") {
     args.push("-f", "bestaudio/best", "--extract-audio", "--audio-format", "mp3", "--audio-quality", "0");
@@ -137,37 +175,29 @@ app.post("/download", (req, res) => {
 
   args.push(url);
 
-  const proc = spawn(PYTHON, args);
-
-  proc.stdout.on("data", (data) => {
-    const line = data.toString();
-    const match = line.match(/(\d+\.?\d*)%/);
-    if (match) {
-      jobs[jobId].progress = parseFloat(match[1]);
-    }
-  });
-
-  proc.stderr.on("data", (data) => {
-    console.error("yt-dlp stderr:", data.toString().trim());
-  });
-
-  proc.on("close", (code) => {
-    if (code === 0) {
+  ytDlpWrap.exec(args)
+    .on("progress", (progress) => {
+      if (progress.percent != null) {
+        jobs[jobId].progress = progress.percent;
+      }
+    })
+    .on("error", (err) => {
+      console.error("download error:", err.message);
+      jobs[jobId].status = "failed";
+      jobs[jobId].error = err.message.slice(0, 200);
+    })
+    .on("close", () => {
       const files = fs.readdirSync(DOWNLOADS_DIR).filter(f => f.startsWith(jobId));
       if (files.length > 0) {
         jobs[jobId].status = "completed";
         jobs[jobId].progress = 100;
         jobs[jobId].filename = files[0];
         jobs[jobId].downloadUrl = `/file/${jobId}`;
-      } else {
+      } else if (jobs[jobId].status !== "failed") {
         jobs[jobId].status = "failed";
         jobs[jobId].error = "Fichier introuvable après téléchargement";
       }
-    } else {
-      jobs[jobId].status = "failed";
-      jobs[jobId].error = "Téléchargement échoué (code " + code + ")";
-    }
-  });
+    });
 
   res.json({ jobId });
 });
@@ -190,7 +220,13 @@ app.get("/file/:jobId", (req, res) => {
   res.sendFile(filePath);
 });
 
+app.get("/ready", (req, res) => {
+  res.json({ ready: !!ytDlpWrap });
+});
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Serveur lancé sur http://localhost:${PORT}`);
+  await initYtDlp();
+  console.log("yt-dlp prêt !");
 });
