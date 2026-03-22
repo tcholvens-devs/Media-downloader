@@ -1,9 +1,30 @@
 let selectedFormat = null;
 let currentMedia = null;
 let pollInterval = null;
+let serviceReady = false;
 
 const urlInput = document.getElementById("urlInput");
 const clearBtn = document.getElementById("clearBtn");
+
+async function checkReady() {
+  try {
+    const res = await fetch("/ready");
+    const data = await res.json();
+    serviceReady = data.ready;
+    if (!serviceReady) {
+      document.getElementById("analyzeBtnText").textContent = "Initialisation...";
+      document.getElementById("analyzeBtn").disabled = true;
+      setTimeout(checkReady, 2000);
+    } else {
+      document.getElementById("analyzeBtnText").textContent = "Analyser";
+      document.getElementById("analyzeBtn").disabled = false;
+    }
+  } catch {
+    setTimeout(checkReady, 3000);
+  }
+}
+
+checkReady();
 
 urlInput.addEventListener("input", () => {
   clearBtn.style.display = urlInput.value ? "block" : "none";
