@@ -14,7 +14,7 @@ app.get("/", (req, res) => {
 });
 
 const DOWNLOADS_DIR = path.join(__dirname, "../downloads");
-const BIN_PATH = path.join(__dirname, "../bin/yt-dlp");
+const BIN_PATH = path.join(__dirname, "../yt-dlp");
 
 if (!fs.existsSync(DOWNLOADS_DIR)) fs.mkdirSync(DOWNLOADS_DIR, { recursive: true });
 if (!fs.existsSync(path.join(__dirname, "../bin"))) fs.mkdirSync(path.join(__dirname, "../bin"), { recursive: true });
